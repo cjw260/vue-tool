@@ -70,10 +70,10 @@
         <div v-show="leftIsDisplay" class="indexExcel-leftContainer-myTableListHeader">
           <div class="indexExcel-leftContainer-myTableListHeader-title">我的协同表格</div>
           <div class="indexExcel-leftContainer-myTableListHeader-addBtnContainer">
-            <div @click="handleAddTable" class="indexExcel-leftContainer-myTableListHeader-addBtn">
+            <div style="cursor: pointer;" @click="handleAddTable" class="indexExcel-leftContainer-myTableListHeader-addBtn">
               <img style="width: 16px; height: 16px" src="@/asset/add.svg" />
             </div>
-            <div @click="openShareBox" class="indexExcel-leftContainer-myTableListHeader-addBtn">
+            <div style="cursor: pointer;" @click="openShareBox" class="indexExcel-leftContainer-myTableListHeader-addBtn">
               <img style="width: 16px; height: 16px" src="@/asset/share.svg" />
             </div>
           </div>
@@ -324,8 +324,8 @@ const openMenu = (event: MouseEvent, id: number) => {
 const handleLeftDisplayChange = () => {
   leftIsDisplay.value = !leftIsDisplay.value
   listIsDisplay.value = !listIsDisplay.value
-  leftSize.value = leftIsDisplay.value ? 70 : 350
-  leftMinSize.value = leftIsDisplay.value ? 70 : 250
+  leftSize.value = leftIsDisplay.value ? 350 : 70
+  leftMinSize.value = leftIsDisplay.value ? 250 : 70
 }
 
 onMounted(async () => {
@@ -545,5 +545,14 @@ onUnmounted(() => {
   color: #909399;
   font-size: 13px;
   line-height: 1.6;
+}
+.indexExcel-leftContainer-myTableListHeader-addBtnContainer{
+  display: flex;
+  gap: 10px;
+}
+
+.indexExcel-leftContainer-myTableListHeader-addBtn :hover {
+  background-color: #e1e2e3;
+  border-radius: 6px;
 }
 </style>

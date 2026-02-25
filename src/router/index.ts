@@ -1,4 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
+// 引入布局组件
+import Layout from '@/views/layout/indexLayout.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -6,27 +8,21 @@ const router = createRouter({
     {
       path: '/',
       name: 'Layout',
-      component: () => import('../views/layout/indexLayout.vue'),
-      redirect: '/wordEditor',
+      component: Layout,
+      redirect: '/excel', // 将默认访问路径直接重定向到 excel
       children: [
         {
-          path: '/wordEditor',
-          name: 'wordEditor',
-          component: () => import('../views/word/indexWord.vue'),
-        },
-        {
-          path: '/excelEditor',
-          name: 'excelEditor',
-          component: () => import('../views/excel/indexExcel.vue'),
-        },
-        {
-          path: '/mindMapEditor',
-          name: 'mindMapEditor',
-          component: () => import('../views/mindMap/indexMindMao.vue'),
-        },
-      ],
-    },
-  ],
+          path: 'excel',
+          name: 'Excel',
+          component: () => import('@/views/excel/indexExcel.vue'),
+          meta: {
+            title: '在线表格'
+          }
+        }
+        // 👇 在这里将原来关于 word 和 mindMap 的路由对象全部删除
+      ]
+    }
+  ]
 })
 
 export default router
