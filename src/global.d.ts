@@ -131,6 +131,11 @@ declare global {
     resize: () => void
 
     /**
+     * 刷新表格 UI 面板
+     */
+    refresh: () => void
+
+    /**
      * 获取所有 Sheet 的数据
      */
     getAllSheets: () => LuckysheetSheet[]

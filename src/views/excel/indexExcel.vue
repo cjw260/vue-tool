@@ -1,652 +1,1276 @@
 <template>
-  <!--
-    右键菜单组件 (绝对定位)
-    根据 menuVisible 控制显示，position.x 和 position.y 控制出现的位置
-  -->
   <div
     v-if="menuVisible"
-    :style="{ left: position.x + 'px', top: position.y + 'px' }"
-    class="indexExcel-menuContainerBox"
+    :style="{ left: `${position.x}px`, top: `${position.y}px` }"
+    class="context-menu"
   >
-    <div @click.stop="handleRenameTable" class="indexExcel-menuContainerBoxItem">重命名</div>
-    <div @click.stop="handleRemoveFromList" class="indexExcel-menuContainerBoxItem">从列表移除</div>
-    <div
-      @click.stop="handleDeleteTable"
-      class="indexExcel-menuContainerBoxItem"
-      style="color: #f56c6c"
+    <button type="button" class="context-menu__item" @click.stop="openRenameDialog">
+      重命名表格
+    </button>
+    <button type="button" class="context-menu__item" @click.stop="handleRemoveFromList">
+      仅从列表移除
+    </button>
+    <button
+      type="button"
+      class="context-menu__item context-menu__item--danger"
+      @click.stop="openDeleteDialog"
     >
-      彻底删除(服务器)
-    </div>
+      彻底删除
+    </button>
   </div>
 
-  <!-- 分享弹窗：显示当前表格ID，供用户复制发送给协作者 -->
-  <div v-if="shareBoxVisible" class="shareBoxOverlay">
-    <div class="shareBoxContainer">
-      <div class="shareBoxHeader">协同分享</div>
-      <div class="shareBoxContent">
-        <div class="shareBoxItem">
-          <span class="label">表格 ID：</span>
-          <div class="value-box">{{ activeId || '无' }}</div>
+  <div v-if="shareBoxVisible" class="dialog-overlay" @click.self="shareBoxVisible = false">
+    <div class="dialog-card">
+      <div class="dialog-card__header">
+        <div>
+          <span class="dialog-card__kicker">Share workspace</span>
+          <h3>共享当前表格</h3>
         </div>
-        <div class="shareBoxTip">将此 ID 发送给同事，他们输入ID即可加入协同。</div>
+        <button type="button" class="dialog-card__close" @click="shareBoxVisible = false">×</button>
       </div>
-      <div class="shareBoxFooter">
-        <button class="btn btn-default" @click="shareBoxVisible = false">关闭</button>
-        <button class="btn btn-primary" @click="handleCopyShareInfo">复制 ID</button>
+      <div class="dialog-card__body">
+        <div class="dialog-card__hero">
+          <span class="dialog-card__hero-label">当前文档</span>
+          <strong>{{ activeTable?.name || '未选择表格' }}</strong>
+        </div>
+        <div class="dialog-field">
+          <label>表格 ID</label>
+          <div class="dialog-value">{{ activeId ?? '--' }}</div>
+        </div>
+        <p class="dialog-tip">把这个 ID 发给协作者，对方输入后即可加入同一份在线表格。</p>
+      </div>
+      <div class="dialog-card__footer">
+        <button type="button" class="ui-btn ui-btn--ghost" @click="shareBoxVisible = false">
+          关闭
+        </button>
+        <button type="button" class="ui-btn ui-btn--primary" @click="handleCopyShareInfo">
+          复制 ID
+        </button>
       </div>
     </div>
   </div>
 
-  <!-- 加入他人表格弹窗：供用户输入别人分享的ID，加入协同 -->
-  <div v-if="addOtherBoxVisible" class="shareBoxOverlay">
-    <div class="shareBoxContainer">
-      <div class="shareBoxHeader">加入协同表格</div>
-      <div class="shareBoxContent">
-        <div class="shareBoxItem" style="margin-bottom: 5px">
-          <span class="label">表格 ID：</span>
-          <!-- 按下回车键也可触发加入逻辑 -->
+  <div v-if="addOtherBoxVisible" class="dialog-overlay" @click.self="addOtherBoxVisible = false">
+    <div class="dialog-card">
+      <div class="dialog-card__header">
+        <div>
+          <span class="dialog-card__kicker">Join workspace</span>
+          <h3>加入协同表格</h3>
+        </div>
+        <button
+          type="button"
+          class="dialog-card__close"
+          @click="addOtherBoxVisible = false"
+        >
+          ×
+        </button>
+      </div>
+      <div class="dialog-card__body">
+        <div class="dialog-field">
+          <label for="remote-table-id">共享 ID</label>
           <input
+            id="remote-table-id"
             v-model="otherTableId"
-            class="input-box"
-            placeholder="请输入对方分享的ID"
+            class="dialog-input"
+            placeholder="请输入协作者分享给你的表格 ID"
             @keyup.enter="confirmAddOtherTable"
           />
         </div>
+        <p class="dialog-tip">加入后，这份表格会同步写入你的本地列表，方便后续直接打开。</p>
       </div>
-      <div class="shareBoxFooter">
-        <button class="btn btn-default" @click="addOtherBoxVisible = false">取消</button>
-        <button class="btn btn-primary" @click="confirmAddOtherTable">加入</button>
+      <div class="dialog-card__footer">
+        <button type="button" class="ui-btn ui-btn--ghost" @click="addOtherBoxVisible = false">
+          取消
+        </button>
+        <button type="button" class="ui-btn ui-btn--primary" @click="confirmAddOtherTable">
+          加入表格
+        </button>
       </div>
     </div>
   </div>
 
-  <!-- Element Plus 提供的可拖拽分割面板，用于左右分栏布局 -->
-  <el-splitter lazy class="indexExcel-containerBox">
-    <!-- 左侧侧边栏：我的表格列表 -->
-    <el-splitter-panel v-model:size="leftSize" :min="leftMinSize" :max="800">
-      <div class="demo-panel indexExcel-leftContainer">
-        <!-- 控制左侧边栏展开/收起的按钮 -->
-        <div @click="handleLeftDisplayChange" class="indexExcel-leftContainer-img">
-          <img
-            v-if="leftIsDisplay"
-            style="width: 16px; height: 16px"
-            src="@/asset/close.svg"
-            alt="收起"
-          /><img v-else style="width: 16px; height: 16px" src="@/asset/open.svg" alt="展开" />
+  <div
+    v-if="renameDialogVisible"
+    class="dialog-overlay"
+    @click.self="renameDialogVisible = false"
+  >
+    <div class="dialog-card">
+      <div class="dialog-card__header">
+        <div>
+          <span class="dialog-card__kicker">Rename document</span>
+          <h3>重命名表格</h3>
         </div>
-
-        <!-- 侧边栏头部：标题及快捷操作按钮（添加、分享） -->
-        <div v-show="leftIsDisplay" class="indexExcel-leftContainer-myTableListHeader">
-          <div class="indexExcel-leftContainer-myTableListHeader-title">我的协同表格</div>
-          <div class="indexExcel-leftContainer-myTableListHeader-addBtnContainer">
-            <div style="cursor: pointer;" @click="handleAddTable" class="indexExcel-leftContainer-myTableListHeader-addBtn">
-              <img style="width: 16px; height: 16px" src="@/asset/add.svg" />
-            </div>
-            <div style="cursor: pointer;" @click="openShareBox" class="indexExcel-leftContainer-myTableListHeader-addBtn">
-              <img style="width: 16px; height: 16px" src="@/asset/share.svg" />
-            </div>
-          </div>
-        </div>
-
-        <!-- 表格列表区域 -->
-        <div v-show="listIsDisplay" class="indexExcel-leftContainer-myTableListContainer">
-          <template v-if="tableList.length != 0">
-            <!-- 渲染表格列表，绑定了右键菜单事件和左键点击选中事件 -->
-            <div
-              v-for="item in tableList"
-              @contextmenu.prevent="openMenu($event, item.id)"
-              @click="handleSelectTable(item.id)"
-              :key="item.id"
-              class="indexExcel-leftContainer-btnContainer"
-              :class="{ active: activeId === item.id }"
-            >
-              <span style="margin-left: 6px">{{ item.name }}</span>
-            </div>
-          </template>
-          <!-- 空状态提示 -->
-          <div v-else class="empty-list-tip">
-            暂无表格<br />
-            点击右上角 + 创建<br />
-            或点击下方加入他人表格
-          </div>
-
-          <!-- 底部“加入他人表格”常驻按钮 -->
-          <div class="add-other-table-btn" @click="handleAddOtherTable">
-            <img style="width: 14px; height: 14px; margin-right: 5px" src="@/asset/add.svg" />
-            加入其他人的表格
-          </div>
-        </div>
+        <button
+          type="button"
+          class="dialog-card__close"
+          @click="renameDialogVisible = false"
+        >
+          ×
+        </button>
       </div>
+      <div class="dialog-card__body">
+        <div class="dialog-field">
+          <label for="rename-table-name">表格名称</label>
+          <input
+            id="rename-table-name"
+            v-model="renameValue"
+            class="dialog-input"
+            maxlength="40"
+            placeholder="请输入新的表格名称"
+            @keyup.enter="submitRenameTable"
+          />
+        </div>
+        <p class="dialog-tip">推荐使用清晰的业务名，协作者会在侧边栏看到同样的名称。</p>
+      </div>
+      <div class="dialog-card__footer">
+        <button type="button" class="ui-btn ui-btn--ghost" @click="renameDialogVisible = false">
+          取消
+        </button>
+        <button type="button" class="ui-btn ui-btn--primary" @click="submitRenameTable">
+          保存名称
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div
+    v-if="deleteDialogVisible"
+    class="dialog-overlay"
+    @click.self="deleteDialogVisible = false"
+  >
+    <div class="dialog-card dialog-card--danger">
+      <div class="dialog-card__header">
+        <div>
+          <span class="dialog-card__kicker">Delete forever</span>
+          <h3>彻底删除表格</h3>
+        </div>
+        <button
+          type="button"
+          class="dialog-card__close"
+          @click="deleteDialogVisible = false"
+        >
+          ×
+        </button>
+      </div>
+      <div class="dialog-card__body">
+        <div class="dialog-warning">
+          <strong>{{ currentMenuTable?.name || '当前表格' }}</strong>
+          <p>删除后会同时移除云端协同内容，所有加入该表格的人都将无法继续访问。</p>
+        </div>
+        <p class="dialog-tip dialog-tip--danger">
+          如果你只是暂时不想在左侧栏看到它，请使用“仅从列表移除”。
+        </p>
+      </div>
+      <div class="dialog-card__footer">
+        <button type="button" class="ui-btn ui-btn--ghost" @click="deleteDialogVisible = false">
+          取消
+        </button>
+        <button type="button" class="ui-btn ui-btn--danger" @click="confirmDeleteTable">
+          确认删除
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <el-splitter lazy class="workspace">
+    <el-splitter-panel v-model:size="leftSize" :min="leftMinSize" :max="420">
+      <aside class="workspace-sidebar" :class="{ 'workspace-sidebar--collapsed': !leftIsDisplay }">
+        <div class="workspace-sidebar__top">
+          <button
+            type="button"
+            class="workspace-sidebar__toggle"
+            :aria-label="leftIsDisplay ? '收起侧栏' : '展开侧栏'"
+            @click="handleLeftDisplayChange"
+          >
+            <img
+              v-if="leftIsDisplay"
+              src="@/asset/close.svg"
+              alt="收起侧栏"
+              class="workspace-sidebar__toggle-icon"
+            />
+            <img
+              v-else
+              src="@/asset/open.svg"
+              alt="展开侧栏"
+              class="workspace-sidebar__toggle-icon"
+            />
+          </button>
+
+          <div v-if="leftIsDisplay" class="workspace-sidebar__intro">
+            <span class="workspace-sidebar__eyebrow">Document shelf</span>
+            <h2>我的协同表格</h2>
+            <p>{{ tableSummary }}</p>
+          </div>
+        </div>
+
+        <div class="workspace-sidebar__actions" :class="{ compact: !leftIsDisplay }">
+          <button
+            type="button"
+            class="ui-btn ui-btn--primary ui-btn--full"
+            :class="{ 'ui-btn--icon-only': !leftIsDisplay }"
+            @click="handleAddTable"
+          >
+            <span class="ui-btn__icon">+</span>
+            <span v-if="leftIsDisplay">新建表格</span>
+          </button>
+          <button
+            type="button"
+            class="ui-btn ui-btn--ghost ui-btn--full"
+            :class="{ 'ui-btn--icon-only': !leftIsDisplay }"
+            @click="openShareBox"
+          >
+            <span class="ui-btn__icon">↗</span>
+            <span v-if="leftIsDisplay">分享当前表格</span>
+          </button>
+        </div>
+
+        <div class="workspace-sidebar__list">
+          <template v-if="tableList.length">
+            <button
+              v-for="item in tableList"
+              :key="item.id"
+              type="button"
+              :title="item.name"
+              class="table-card"
+              :class="{ 'table-card--active': activeId === item.id, compact: !leftIsDisplay }"
+              @click="handleSelectTable(item.id)"
+              @contextmenu.prevent="openMenu($event, item.id)"
+            >
+              <span class="table-card__accent"></span>
+              <div class="table-card__avatar">
+                {{ leftIsDisplay ? item.name.slice(0, 1) : getTableMonogram(item.name) }}
+              </div>
+              <div v-if="leftIsDisplay" class="table-card__body">
+                <span class="table-card__title">{{ item.name }}</span>
+                <span class="table-card__meta">最近更新 {{ formatUpdatedAt(item.updatedAt) }}</span>
+              </div>
+              <span v-if="leftIsDisplay" class="table-card__tag">
+                #{{ String(item.id).slice(-4) }}
+              </span>
+            </button>
+          </template>
+          <div v-else class="workspace-sidebar__empty">
+            <span class="workspace-sidebar__empty-title">这里还没有表格</span>
+            <p>先创建一份协作表格，或者输入共享 ID 加入别人的工作区。</p>
+          </div>
+        </div>
+
+        <div class="workspace-sidebar__footer">
+          <button
+            type="button"
+            class="join-card"
+            :class="{ compact: !leftIsDisplay }"
+            @click="handleAddOtherTable"
+          >
+            <span class="join-card__icon">+</span>
+            <div v-if="leftIsDisplay" class="join-card__copy">
+              <strong>加入协同表格</strong>
+              <span>输入共享 ID，接入同一份在线表格</span>
+            </div>
+          </button>
+        </div>
+      </aside>
     </el-splitter-panel>
 
-    <!-- 右侧主工作区：Excel 编辑器 -->
-    <el-splitter-panel :min="200">
-      <!-- 未选中表格时的空状态 -->
-      <div v-if="!activeId" class="indexExcel-rightContainer">
-        <div class="indexExcel-rightContainerNoneContainer">请选择或创建一个表格开始协同</div>
-      </div>
-      <!-- 选中表格后渲染 excelItem 组件，用 :key 强制组件在切换表格时重新挂载 -->
-      <div v-else class="indexExcel-rightContainer-editorContainer">
-        <excelItem :key="activeId" :id="activeId"></excelItem>
-      </div>
+    <el-splitter-panel :min="260">
+      <section class="workspace-main">
+        <template v-if="activeId && activeTable">
+          <div class="workspace-main__header">
+            <div class="workspace-main__heading">
+              <span class="workspace-main__eyebrow">Current workspace</span>
+              <h3>{{ activeTable.name }}</h3>
+              <p>文档 ID {{ activeTable.id }} · 最近更新 {{ formatUpdatedAt(activeTable.updatedAt) }}</p>
+            </div>
+            <div class="workspace-main__actions">
+              <button type="button" class="ui-btn ui-btn--ghost" @click="openShareBox">
+                分享协作
+              </button>
+            </div>
+          </div>
+
+          <div class="workspace-main__editor">
+            <excelItem :key="activeId" :id="activeId" />
+          </div>
+        </template>
+
+        <div v-else class="workspace-empty-state">
+          <span class="workspace-empty-state__eyebrow">Ready to collaborate</span>
+          <h3>把表格变成一个实时协作工作区</h3>
+          <p>
+            在左侧建立你的文档架，右侧就是完整的编辑舞台。你可以新建表格，也可以输入共享
+            ID 立即加入同事正在编辑的表格。
+          </p>
+          <div class="workspace-empty-state__actions">
+            <button type="button" class="ui-btn ui-btn--primary" @click="handleAddTable">
+              创建第一份表格
+            </button>
+            <button type="button" class="ui-btn ui-btn--ghost" @click="handleAddOtherTable">
+              输入共享 ID
+            </button>
+          </div>
+        </div>
+      </section>
     </el-splitter-panel>
   </el-splitter>
 </template>
 
 <script setup lang="ts">
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { ElMessage } from 'element-plus'
 import {
-  saveRemoteTable,
   deleteRemoteTable,
-  validateRemoteTableList,
   getRemoteTableDetail,
+  saveRemoteTable,
   type RemoteTableItem,
+  validateRemoteTableList,
 } from '@/api/excel'
 import excelItem from './components/excelItem.vue'
-import { onMounted, onUnmounted, reactive, ref } from 'vue'
 
-// ==========================================
-// 核心状态数据定义
-// ==========================================
-
-// 用于将用户拥有的/加入的表格ID保存在浏览器本地，实现"历史记录"功能
 const LOCAL_STORAGE_KEY = 'my_collaborative_excel_ids'
 
-// 侧边栏 UI 状态
-const leftIsDisplay = ref<boolean>(true) // 侧边栏头部是否显示
-const listIsDisplay = ref<boolean>(true) // 表格列表是否显示
-const leftSize = ref<number>(315) // 左侧面板当前宽度
-const leftMinSize = ref<number>(250) // 左侧面板最小宽度
+const leftIsDisplay = ref(true)
+const leftSize = ref(320)
+const leftMinSize = ref(260)
 
-// 数据状态
-const tableList = ref<Array<RemoteTableItem>>([]) // 经过后端校验后的表格详情列表
-const activeId = ref<number | null>(null) // 当前正在编辑的表格ID
+const tableList = ref<RemoteTableItem[]>([])
+const activeId = ref<number | null>(null)
 
-// 弹窗与菜单 UI 状态
-const menuVisible = ref(false) // 右键菜单是否可见
-const shareBoxVisible = ref(false) // 分享弹窗是否可见
-const addOtherBoxVisible = ref(false) // 加入他人表格弹窗是否可见
-const otherTableId = ref('') // 用户在输入框中填写的他人表格ID
+const menuVisible = ref(false)
+const shareBoxVisible = ref(false)
+const addOtherBoxVisible = ref(false)
+const renameDialogVisible = ref(false)
+const deleteDialogVisible = ref(false)
 
-// 右键菜单相关状态
-const position = reactive({ x: 0, y: 0 }) // 右键菜单显示的坐标位置
-const delId = ref<number | null>(null) // 右键点击时选中的那张表格的ID，用于重命名、删除等操作
+const otherTableId = ref('')
+const renameValue = ref('')
 
+const position = reactive({ x: 0, y: 0 })
+const delId = ref<number | null>(null)
 
-// ==========================================
-// 逻辑处理函数
-// ==========================================
+const tableSummary = computed(() => {
+  if (!tableList.value.length) return '建立自己的文档架，随时发起或加入协作。'
+  return `共 ${tableList.value.length} 份表格，右键可管理每一份文档。`
+})
 
-/**
- * 从本地存储中读取用户的表格历史记录ID列表
- */
+const activeTable = computed(
+  () => tableList.value.find((item) => item.id === activeId.value) ?? null,
+)
+
+const currentMenuTable = computed(
+  () => tableList.value.find((item) => item.id === delId.value) ?? null,
+)
+
 const getLocalIds = (): number[] => {
   try {
     const json = localStorage.getItem(LOCAL_STORAGE_KEY)
     return json ? JSON.parse(json) : []
-  } catch (e) {
-    console.error('读取本地ID失败:', e)
+  } catch (error) {
+    console.error('Read local table ids failed:', error)
     return []
   }
 }
 
-/**
- * 将新的表格ID列表保存到本地存储，并去重
- */
 const saveLocalIds = (ids: number[]) => {
-  const uniqueIds = Array.from(new Set(ids)) // Set自带去重功能
-  localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(uniqueIds))
+  localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(Array.from(new Set(ids))))
 }
 
-/**
- * 刷新表格列表
- * 逻辑：读取本地所有ID -> 发给后端请求校验(有些可能在服务器已被删除) -> 拿到真实有效的数据更新视图
- */
+const formatUpdatedAt = (timestamp: number) => {
+  if (!timestamp) return '--'
+
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(timestamp)
+}
+
+const getTableMonogram = (name: string) => {
+  return name.trim().slice(0, 1).toUpperCase() || '#'
+}
+
+const closeOverlays = () => {
+  menuVisible.value = false
+  shareBoxVisible.value = false
+  addOtherBoxVisible.value = false
+  renameDialogVisible.value = false
+  deleteDialogVisible.value = false
+}
+
 const refreshList = async () => {
   const localIds = getLocalIds()
-  if (localIds.length === 0) {
+  if (!localIds.length) {
     tableList.value = []
+    activeId.value = null
     return
   }
 
   try {
-    // 构造 payload，as unknown 作为类型转换跳板绕过严格类型检查
     const payload = localIds.map((id) => ({ id })) as unknown as RemoteTableItem[]
-    // 调用接口：获取这些ID对应的实际表格信息（无效ID会被后端过滤）
     const validTables = await validateRemoteTableList(payload)
 
     tableList.value = validTables || []
 
-    // 同步本地存储：如果发现有本地ID在服务端不存在了，需要更新本地存储，剔除无效ID
-    const validIds = validTables.map((t) => t.id)
+    const validIds = tableList.value.map((item) => item.id)
     if (validIds.length !== localIds.length) {
       saveLocalIds(validIds)
     }
+
+    if (activeId.value !== null && !validIds.includes(activeId.value)) {
+      activeId.value = null
+    }
   } catch (error) {
-    console.error('刷新列表失败', error)
+    console.error('Refresh list failed:', error)
   }
 }
 
-/**
- * 新建一个协同表格
- */
 const handleAddTable = async () => {
-  const newId = new Date().getTime() // 简单使用时间戳生成唯一ID
-  const newName = `协同表格 ${new Date().toLocaleTimeString()}` // 默认名称
+  const newId = Date.now()
+  const newName = `协同表格 ${new Date().toLocaleTimeString()}`
 
   try {
-    // 1. 在服务端创建记录
     await saveRemoteTable({ id: newId, name: newName })
-    // 2. 将新ID插入到本地记录的最前面
     const ids = getLocalIds()
     ids.unshift(newId)
     saveLocalIds(ids)
-    // 3. 刷新列表并自动选中新建的表格
     await refreshList()
     activeId.value = newId
-  } catch (err) {
-    console.error('创建表格失败:', err)
-    alert('创建失败，请检查网络')
+    ElMessage.success('已创建新的协同表格')
+  } catch (error) {
+    console.error('Create table failed:', error)
+    ElMessage.error('创建失败，请检查后端服务是否已启动')
   }
 }
 
-/**
- * 打开加入他人表格的弹窗
- */
 const handleAddOtherTable = () => {
-  otherTableId.value = '' // 清空上次遗留的输入框内容
+  menuVisible.value = false
+  otherTableId.value = ''
   addOtherBoxVisible.value = true
 }
 
-/**
- * 确认加入他人表格逻辑
- */
 const confirmAddOtherTable = async () => {
   const inputId = Number(otherTableId.value.trim())
   if (!inputId) {
-    alert('请输入表格ID')
+    ElMessage.warning('请输入有效的表格 ID')
     return
   }
 
-  // 防止重复加入
-  if (tableList.value.some((t) => t.id === inputId)) {
-    alert('该表格已在列表中')
+  if (tableList.value.some((item) => item.id === inputId)) {
     activeId.value = inputId
     addOtherBoxVisible.value = false
+    ElMessage.info('这份表格已经在你的列表中了')
     return
   }
 
   try {
-    // 1. 调用接口检查这个表格ID在服务器上是否存在
     await getRemoteTableDetail(inputId)
-    // 2. 存在则加入本地历史记录
     const ids = getLocalIds()
     ids.unshift(inputId)
     saveLocalIds(ids)
-    // 3. 刷新列表并选中
     await refreshList()
     activeId.value = inputId
     addOtherBoxVisible.value = false
-  } catch (err) {
-    console.error('加入表格失败:', err)
-    alert('无法找到该表格或网络错误')
+    ElMessage.success('已加入协同表格')
+  } catch (error) {
+    console.error('Join table failed:', error)
+    ElMessage.error('找不到这份表格，或当前网络连接不可用')
   }
 }
 
-/**
- * 右键菜单操作：重命名表格
- */
-const handleRenameTable = async () => {
+const openRenameDialog = () => {
   if (delId.value === null) return
 
-  const targetTable = tableList.value.find((t) => t.id === delId.value)
-  if (!targetTable) return
+  const target = currentMenuTable.value
+  if (!target) return
 
-  // 简单使用 prompt 弹窗获取新名字
-  const newName = prompt('请输入新的表格名称', targetTable.name)
-  if (newName && newName.trim() !== '' && newName !== targetTable.name) {
-    try {
-      // 提交重命名请求到服务器
-      await saveRemoteTable({ id: delId.value, name: newName })
-      await refreshList() // 刷新列表查看最新名称
-    } catch (err) {
-      console.error('重命名失败:', err)
-      alert('重命名失败')
-    }
-  }
-  menuVisible.value = false // 操作后隐藏右键菜单
+  renameValue.value = target.name
+  menuVisible.value = false
+  renameDialogVisible.value = true
 }
 
-/**
- * 右键菜单操作：仅从本地列表移除 (不影响服务器和其他协同者)
- */
-const handleRemoveFromList = async () => {
-  if (delId.value !== null) {
-    // 从本地存储中剔除该ID
-    const ids = getLocalIds()
-    const newIds = ids.filter((id) => id !== delId.value)
-    saveLocalIds(newIds)
+const submitRenameTable = async () => {
+  if (delId.value === null) return
 
+  const newName = renameValue.value.trim()
+  if (!newName) {
+    ElMessage.warning('请输入新的表格名称')
+    return
+  }
+
+  try {
+    await saveRemoteTable({ id: delId.value, name: newName })
     await refreshList()
-    // 如果移除的是当前正在编辑的表格，清空右侧编辑区
+    renameDialogVisible.value = false
+    ElMessage.success('表格名称已更新')
+  } catch (error) {
+    console.error('Rename table failed:', error)
+    ElMessage.error('重命名失败，请稍后再试')
+  }
+}
+
+const handleRemoveFromList = async () => {
+  if (delId.value === null) return
+
+  const ids = getLocalIds()
+  saveLocalIds(ids.filter((id) => id !== delId.value))
+  await refreshList()
+
+  if (activeId.value === delId.value) {
+    activeId.value = null
+  }
+
+  menuVisible.value = false
+  ElMessage.success('已从当前列表移除')
+}
+
+const openDeleteDialog = () => {
+  if (delId.value === null) return
+  menuVisible.value = false
+  deleteDialogVisible.value = true
+}
+
+const confirmDeleteTable = async () => {
+  if (delId.value === null) return
+
+  try {
+    await deleteRemoteTable(delId.value)
+
+    const ids = getLocalIds()
+    saveLocalIds(ids.filter((id) => id !== delId.value))
+    await refreshList()
+
     if (activeId.value === delId.value) {
       activeId.value = null
     }
-    menuVisible.value = false
+
+    deleteDialogVisible.value = false
+    ElMessage.success('表格已彻底删除')
+  } catch (error) {
+    console.error('Delete table failed:', error)
+    ElMessage.error('删除失败，请稍后再试')
   }
 }
 
-/**
- * 右键菜单操作：彻底从服务器删除该表格 (所有人都将无法访问)
- */
-const handleDeleteTable = async () => {
-  if (delId.value !== null) {
-    if (
-      confirm(
-        '【危险】确定要从服务器彻底删除此表格吗？\n如果只是不想看到它，请选择“从列表移除”。\n删除后所有人都无法访问！',
-      )
-    ) {
-      try {
-        // 请求服务器删除
-        await deleteRemoteTable(delId.value)
-
-        // 同时从本地历史中清理
-        const ids = getLocalIds()
-        const newIds = ids.filter((id) => id !== delId.value)
-        saveLocalIds(newIds)
-
-        await refreshList()
-        // 如果删除的是当前活动表格，重置状态
-        if (activeId.value === delId.value) {
-          activeId.value = null
-        }
-      } catch (err) {
-        console.error('删除失败:', err)
-        alert('删除失败')
-      }
-    }
-    menuVisible.value = false
-  }
-}
-
-/**
- * 鼠标左键点击列表：切换要编辑的表格
- */
 const handleSelectTable = (id: number) => {
   if (activeId.value === id) return
   activeId.value = id
 }
 
-/**
- * 打开分享弹窗
- */
 const openShareBox = () => {
-  if (activeId.value) shareBoxVisible.value = true
+  if (!activeId.value) {
+    ElMessage.info('先选择一份表格，再分享给协作者')
+    return
+  }
+
+  menuVisible.value = false
+  shareBoxVisible.value = true
 }
 
-/**
- * 复制当前活动表格的 ID 到系统剪贴板
- */
-const handleCopyShareInfo = () => {
+const handleCopyShareInfo = async () => {
   if (!activeId.value) return
-  navigator.clipboard
-    .writeText(String(activeId.value))
-    .then(() => (shareBoxVisible.value = false)) // 复制成功后自动关闭弹窗
-    .catch(() => alert('复制失败'))
+
+  try {
+    await navigator.clipboard.writeText(String(activeId.value))
+    shareBoxVisible.value = false
+    ElMessage.success('表格 ID 已复制到剪贴板')
+  } catch (error) {
+    console.error('Copy share info failed:', error)
+    ElMessage.error('复制失败，请检查浏览器权限')
+  }
 }
 
-/**
- * 在列表上触发鼠标右键事件：打开自定义右键菜单
- */
 const openMenu = (event: MouseEvent, id: number) => {
-  // 获取鼠标点击的位置来定位菜单
-  position.x = event.clientX
-  position.y = event.clientY
+  const menuWidth = 188
+  const menuHeight = 148
+  const viewportWidth = window.innerWidth
+  const viewportHeight = window.innerHeight
+
+  position.x = Math.min(event.clientX, viewportWidth - menuWidth - 12)
+  position.y = Math.min(event.clientY, viewportHeight - menuHeight - 12)
+  delId.value = id
   menuVisible.value = true
-  delId.value = id // 记录下操作的对象是谁
 }
 
-/**
- * 侧边栏折叠/展开动画状态控制
- */
 const handleLeftDisplayChange = () => {
   leftIsDisplay.value = !leftIsDisplay.value
-  listIsDisplay.value = !listIsDisplay.value
-  leftSize.value = leftIsDisplay.value ? 350 : 70
-  leftMinSize.value = leftIsDisplay.value ? 250 : 70
+  leftSize.value = leftIsDisplay.value ? 320 : 92
+  leftMinSize.value = leftIsDisplay.value ? 260 : 92
 }
 
-// ==========================================
-// 生命周期钩子
-// ==========================================
+const handleWindowClick = () => {
+  menuVisible.value = false
+}
+
+const handleWindowKeydown = (event: KeyboardEvent) => {
+  if (event.key === 'Escape') {
+    closeOverlays()
+  }
+}
 
 onMounted(async () => {
-  // 全局点击事件：用于点击空白处隐藏自定义右键菜单
-  window.addEventListener('click', () => {
-    menuVisible.value = false
-  })
-  // 组件挂载时自动拉取并刷新最新列表数据
+  if (window.innerWidth < 960) {
+    leftIsDisplay.value = false
+    leftSize.value = 92
+    leftMinSize.value = 92
+  }
+
+  window.addEventListener('click', handleWindowClick)
+  window.addEventListener('keydown', handleWindowKeydown)
+
   await refreshList()
 })
 
 onUnmounted(() => {
-  // 组件销毁时移除全局事件监听，防止内存泄漏
-  window.removeEventListener('click', () => {
-    menuVisible.value = false
-  })
+  window.removeEventListener('click', handleWindowClick)
+  window.removeEventListener('keydown', handleWindowKeydown)
 })
 </script>
 
 <style scoped>
-/* 保持原有样式，防止文本被意外选中 */
-* {
-  user-select: none;
-}
-.indexExcel-containerBox {
-  height: calc(100vh - 60px);
-  z-index: 1000;
-}
-.indexExcel-leftContainer {
-  background-color: #f5f6f7;
+.workspace {
   height: 100%;
-  padding: 20px 5px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  box-sizing: border-box;
-}
-.indexExcel-leftContainer-img {
-  width: 30px;
-  height: 30px;
-  cursor: pointer;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  border-radius: 10px;
-}
-.indexExcel-leftContainer-img:hover {
-  background-color: #e1e2e3;
-}
-.indexExcel-leftContainer-btnContainer {
-  padding: 8px 30px;
-  cursor: pointer;
-  border-radius: 6px;
-  color: #475b6d;
-  display: flex;
-  align-items: center;
-}
-.indexExcel-leftContainer-btnContainer:hover {
-  background-color: #e1e2e3;
-}
-.indexExcel-leftContainer-btnContainer.active {
-  background-color: #d3def6;
-  color: #1a73e8 !important;
-}
-.indexExcel-leftContainer-myTableListHeader {
-  display: flex;
-  justify-content: space-between;
-  padding: 5px 30px;
-  border-radius: 6px;
-  align-items: center;
-}
-.indexExcel-leftContainer-myTableListHeader-title {
-  font-weight: 600;
-  color: #333;
-}
-.indexExcel-leftContainer-myTableListContainer {
-  flex: 1;
-  overflow-y: auto;
-  margin-top: 10px;
-  scrollbar-width: thin;
-}
-.indexExcel-rightContainer {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 100%;
-}
-.indexExcel-rightContainer-editorContainer {
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-}
-.indexExcel-menuContainerBox {
-  position: fixed;
-  width: 140px; /* 稍微加宽以适应文字 */
-  background-color: white;
-  border: 1px solid #dcdfe6;
-  border-radius: 8px;
-  z-index: 2000;
-  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
-}
-.indexExcel-menuContainerBoxItem {
-  padding: 10px 15px;
-  cursor: pointer;
-  font-size: 13px;
-  color: #606266;
-}
-.indexExcel-menuContainerBoxItem:hover {
-  background-color: #ecf5ff;
-  color: #409eff;
+  min-height: 0;
+  z-index: 1;
 }
 
-/* Share Box Styles (弹窗样式) */
-.shareBoxOverlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background-color: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(4px);
-  z-index: 3000;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-.shareBoxContainer {
-  width: 420px;
-  background-color: white;
-  border-radius: 12px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
+.workspace-sidebar {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  gap: 18px;
+  height: 100%;
+  padding: 22px 16px 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.74), rgba(244, 246, 240, 0.94)),
+    linear-gradient(135deg, rgba(190, 123, 49, 0.1), transparent 32%);
+  border-right: 1px solid rgba(46, 58, 47, 0.08);
+  user-select: none;
+  transition:
+    padding var(--app-transition),
+    background var(--app-transition);
 }
-.shareBoxHeader {
-  padding: 16px 20px;
-  font-size: 18px;
-  font-weight: 600;
-  color: #333;
-  border-bottom: 1px solid #eee;
+
+.workspace-sidebar--collapsed {
+  padding-right: 10px;
+  padding-left: 10px;
 }
-.shareBoxContent {
-  padding: 24px 20px;
-  color: #555;
-  font-size: 14px;
-}
-.shareBoxItem {
+
+.workspace-sidebar__top {
   display: flex;
-  align-items: center;
-  margin-bottom: 16px;
+  align-items: flex-start;
+  gap: 14px;
 }
-.shareBoxItem .label {
-  width: 80px;
-  font-weight: 500;
-  color: #666;
-}
-.shareBoxItem .value-box {
-  background-color: #f5f7fa;
-  padding: 6px 10px;
-  border-radius: 4px;
-  color: #333;
-  font-family: monospace;
-  border: 1px solid #e4e7ed;
-  flex: 1;
-}
-.shareBoxTip {
-  margin-top: 10px;
-  font-size: 12px;
-  color: #999;
-}
-.shareBoxFooter {
-  padding: 16px 20px;
-  background-color: #f9fafb;
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  border-top: 1px solid #eee;
-}
-.btn {
-  padding: 8px 16px;
-  border-radius: 6px;
-  font-size: 14px;
+
+.workspace-sidebar__toggle {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--app-line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: var(--app-shadow-sm);
   cursor: pointer;
-  border: none;
+  transition:
+    transform var(--app-transition),
+    background var(--app-transition);
 }
-.btn-default {
-  background-color: #e4e7ed;
-  color: #606266;
+
+.workspace-sidebar__toggle:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.92);
 }
-.btn-primary {
-  background-color: #1a73e8;
-  color: white;
+
+.workspace-sidebar__toggle-icon {
+  width: 16px;
+  height: 16px;
 }
-.add-other-table-btn {
-  margin-top: auto;
-  margin-bottom: 10px;
-  padding: 12px 30px;
-  color: #1a73e8;
-  cursor: pointer;
+
+.workspace-sidebar__intro {
   display: flex;
-  align-items: center;
-  font-size: 13px;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  animation: slideIn 260ms ease;
 }
-.add-other-table-btn:hover {
-  text-decoration: underline;
+
+.workspace-sidebar__eyebrow,
+.workspace-main__eyebrow,
+.workspace-empty-state__eyebrow,
+.dialog-card__kicker {
+  color: var(--app-text-faint);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
 }
-.input-box {
-  flex: 1;
-  padding: 8px 10px;
-  border-radius: 4px;
-  border: 1px solid #dcdfe6;
-  outline: none;
-  font-size: 14px;
-  font-family: monospace;
+
+.workspace-sidebar__intro h2,
+.workspace-main__heading h3,
+.workspace-empty-state h3,
+.dialog-card__header h3 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.15;
 }
-.empty-list-tip {
-  padding: 40px 20px;
-  text-align: center;
-  color: #909399;
-  font-size: 13px;
-  line-height: 1.6;
+
+.workspace-sidebar__intro p,
+.workspace-main__heading p,
+.workspace-empty-state p,
+.dialog-tip {
+  margin: 0;
+  color: var(--app-text-soft);
 }
-.indexExcel-leftContainer-myTableListHeader-addBtnContainer{
-  display: flex;
+
+.workspace-sidebar__actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
 }
 
-.indexExcel-leftContainer-myTableListHeader-addBtn :hover {
-  background-color: #e1e2e3;
-  border-radius: 6px;
+.workspace-sidebar__actions.compact {
+  justify-items: center;
+}
+
+.ui-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  cursor: pointer;
+  transition:
+    transform var(--app-transition),
+    border-color var(--app-transition),
+    background var(--app-transition),
+    color var(--app-transition),
+    box-shadow var(--app-transition);
+}
+
+.ui-btn:hover {
+  transform: translateY(-1px);
+}
+
+.ui-btn--full {
+  width: 100%;
+}
+
+.ui-btn--icon-only {
+  width: 48px;
+  padding: 0;
+}
+
+.ui-btn__icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.ui-btn--primary {
+  background: linear-gradient(135deg, var(--app-primary), var(--app-primary-strong));
+  box-shadow: var(--app-shadow-sm);
+  color: #f4faf7;
+}
+
+.ui-btn--primary:hover {
+  box-shadow: var(--app-shadow-md);
+}
+
+.ui-btn--ghost {
+  border-color: var(--app-line);
+  background: rgba(255, 255, 255, 0.68);
+  color: var(--app-text);
+}
+
+.ui-btn--ghost:hover {
+  border-color: var(--app-line-strong);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.ui-btn--danger {
+  background: linear-gradient(135deg, #d25f49, var(--app-danger));
+  box-shadow: var(--app-shadow-sm);
+  color: #fff4f2;
+}
+
+.workspace-sidebar__list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.table-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 14px 14px 0;
+  border: 1px solid transparent;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    transform var(--app-transition),
+    border-color var(--app-transition),
+    background var(--app-transition),
+    box-shadow var(--app-transition);
+}
+
+.table-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(30, 109, 90, 0.12);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: var(--app-shadow-sm);
+}
+
+.table-card.compact {
+  grid-template-columns: 1fr;
+  justify-items: center;
+  gap: 0;
+  padding: 12px 0;
+}
+
+.table-card__accent {
+  width: 4px;
+  height: 42px;
+  border-radius: 999px;
+  background: transparent;
+  transition: background var(--app-transition);
+}
+
+.table-card__avatar {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(30, 109, 90, 0.16), rgba(190, 123, 49, 0.18));
+  color: var(--app-primary-strong);
+  font-weight: 700;
+}
+
+.table-card__body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.table-card__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.table-card__meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--app-text-faint);
+  font-size: 12px;
+}
+
+.table-card__tag {
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.74);
+  color: var(--app-text-faint);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.table-card--active {
+  border-color: rgba(30, 109, 90, 0.18);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(238, 244, 240, 0.98));
+  box-shadow: var(--app-shadow-md);
+}
+
+.table-card--active .table-card__accent {
+  background: linear-gradient(180deg, var(--app-primary), var(--app-accent));
+}
+
+.workspace-sidebar__empty {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  border: 1px dashed rgba(46, 58, 47, 0.18);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.44);
+  color: var(--app-text-soft);
+}
+
+.workspace-sidebar__empty-title {
+  font-weight: 700;
+  color: var(--app-text);
+}
+
+.workspace-sidebar__footer {
+  margin-top: auto;
+}
+
+.join-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px;
+  border: 1px solid rgba(30, 109, 90, 0.12);
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.84), rgba(240, 244, 239, 0.92));
+  cursor: pointer;
+  text-align: left;
+  transition:
+    transform var(--app-transition),
+    border-color var(--app-transition),
+    box-shadow var(--app-transition);
+}
+
+.join-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(30, 109, 90, 0.2);
+  box-shadow: var(--app-shadow-sm);
+}
+
+.join-card.compact {
+  justify-content: center;
+  padding: 12px 0;
+}
+
+.join-card__icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  background: var(--app-primary-soft);
+  color: var(--app-primary-strong);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.join-card__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.join-card__copy strong {
+  font-size: 14px;
+}
+
+.join-card__copy span {
+  color: var(--app-text-faint);
+  font-size: 12px;
+}
+
+.workspace-main {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  height: 100%;
+  min-height: 0;
+  padding: 22px;
+}
+
+.workspace-main__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 4px 2px 0;
+}
+
+.workspace-main__heading {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.workspace-main__editor {
+  flex: 1;
+  min-height: 0;
+}
+
+.workspace-empty-state {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 16px;
+  height: 100%;
+  min-height: 0;
+  padding: 40px;
+  border: 1px solid rgba(46, 58, 47, 0.08);
+  border-radius: 28px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(245, 247, 243, 0.94)),
+    radial-gradient(circle at top right, rgba(190, 123, 49, 0.12), transparent 24%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  text-align: center;
+}
+
+.workspace-empty-state p {
+  max-width: 560px;
+  font-size: 15px;
+}
+
+.workspace-empty-state__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+}
+
+.context-menu {
+  position: fixed;
+  z-index: 20;
+  display: grid;
+  gap: 6px;
+  width: 188px;
+  padding: 10px;
+  border: 1px solid rgba(46, 58, 47, 0.1);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: var(--app-shadow-lg);
+  backdrop-filter: blur(18px);
+}
+
+.context-menu__item {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition:
+    background var(--app-transition),
+    color var(--app-transition);
+}
+
+.context-menu__item:hover {
+  background: rgba(30, 109, 90, 0.08);
+  color: var(--app-primary-strong);
+}
+
+.context-menu__item--danger:hover {
+  background: var(--app-danger-soft);
+  color: var(--app-danger);
+}
+
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(20, 28, 23, 0.32);
+  backdrop-filter: blur(10px);
+}
+
+.dialog-card {
+  width: min(460px, 100%);
+  border: 1px solid rgba(255, 255, 255, 0.76);
+  border-radius: 28px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 248, 244, 0.98)),
+    linear-gradient(145deg, rgba(30, 109, 90, 0.08), rgba(190, 123, 49, 0.08));
+  box-shadow: var(--app-shadow-lg);
+  overflow: hidden;
+}
+
+.dialog-card--danger {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(250, 244, 242, 0.98)),
+    linear-gradient(145deg, rgba(188, 76, 58, 0.08), rgba(190, 123, 49, 0.06));
+}
+
+.dialog-card__header,
+.dialog-card__body,
+.dialog-card__footer {
+  padding-right: 24px;
+  padding-left: 24px;
+}
+
+.dialog-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 24px;
+}
+
+.dialog-card__close {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  color: var(--app-text-faint);
+  cursor: pointer;
+  transition:
+    background var(--app-transition),
+    color var(--app-transition);
+}
+
+.dialog-card__close:hover {
+  background: rgba(46, 58, 47, 0.08);
+  color: var(--app-text);
+}
+
+.dialog-card__body {
+  display: grid;
+  gap: 18px;
+  padding-top: 18px;
+  padding-bottom: 22px;
+}
+
+.dialog-card__hero {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  border: 1px solid rgba(30, 109, 90, 0.1);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.dialog-card__hero-label {
+  color: var(--app-text-faint);
+  font-size: 12px;
+}
+
+.dialog-field {
+  display: grid;
+  gap: 8px;
+}
+
+.dialog-field label {
+  font-weight: 700;
+}
+
+.dialog-input,
+.dialog-value {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px solid var(--app-line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.dialog-input {
+  outline: none;
+  transition:
+    border-color var(--app-transition),
+    box-shadow var(--app-transition);
+}
+
+.dialog-input:focus {
+  border-color: rgba(30, 109, 90, 0.32);
+  box-shadow: 0 0 0 4px rgba(30, 109, 90, 0.1);
+}
+
+.dialog-value {
+  display: flex;
+  align-items: center;
+  color: var(--app-primary-strong);
+  font-family: 'Cascadia Mono', 'Consolas', monospace;
+  font-size: 15px;
+}
+
+.dialog-tip {
+  font-size: 13px;
+}
+
+.dialog-tip--danger {
+  color: var(--app-danger);
+}
+
+.dialog-warning {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  border: 1px solid rgba(188, 76, 58, 0.14);
+  border-radius: 18px;
+  background: rgba(188, 76, 58, 0.08);
+}
+
+.dialog-warning strong {
+  font-size: 16px;
+}
+
+.dialog-warning p {
+  margin: 0;
+  color: #7c463d;
+}
+
+.dialog-card__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 18px;
+  padding-bottom: 24px;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+:deep(.el-splitter__split-bar) {
+  width: 16px;
+}
+
+:deep(.el-splitter__split-bar-button) {
+  width: 4px;
+  border-radius: 999px;
+  background: rgba(46, 58, 47, 0.14);
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 1080px) {
+  .workspace-main {
+    padding: 18px;
+  }
+
+  .workspace-main__header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 720px) {
+  .workspace-main {
+    padding: 14px;
+  }
+
+  .workspace-empty-state {
+    padding: 28px 20px;
+  }
+
+  .dialog-card__footer {
+    flex-wrap: wrap;
+  }
+
+  .dialog-card__footer .ui-btn {
+    width: 100%;
+  }
 }
 </style>

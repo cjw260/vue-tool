@@ -11,7 +11,6 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
-    ElInput: typeof import('element-plus/es')['ElInput']
     ElSplitter: typeof import('element-plus/es')['ElSplitter']
     ElSplitterPanel: typeof import('element-plus/es')['ElSplitterPanel']
     RouterLink: typeof import('vue-router')['RouterLink']
