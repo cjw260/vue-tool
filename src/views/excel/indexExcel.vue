@@ -1,4 +1,10 @@
 <template>
+  <!--
+    ====== 全局弹窗区域 ======
+    为了不影响页面流，所有的弹窗和右键菜单都通过 v-if 控制并使用了绝对/固定定位
+  -->
+
+  <!-- 右键菜单：在左侧列表项上右键时触发 -->
   <div
     v-if="menuVisible"
     :style="{ left: `${position.x}px`, top: `${position.y}px` }"
@@ -7,9 +13,11 @@
     <button type="button" class="context-menu__item" @click.stop="openRenameDialog">
       重命名表格
     </button>
+    <!-- 仅从本地列表移除，别人依然可以访问 -->
     <button type="button" class="context-menu__item" @click.stop="handleRemoveFromList">
       仅从列表移除
     </button>
+    <!-- 彻底从服务器抹除数据，所有人都无法访问 -->
     <button
       type="button"
       class="context-menu__item context-menu__item--danger"
@@ -19,7 +27,9 @@
     </button>
   </div>
 
+  <!-- 分享弹窗：展示当前表格 ID 供用户复制给同事 -->
   <div v-if="shareBoxVisible" class="dialog-overlay" @click.self="shareBoxVisible = false">
+    <!-- ... (UI结构) ... -->
     <div class="dialog-card">
       <div class="dialog-card__header">
         <div>
@@ -50,6 +60,7 @@
     </div>
   </div>
 
+  <!-- 加入其他表格弹窗：用户输入同事分享的 ID -->
   <div v-if="addOtherBoxVisible" class="dialog-overlay" @click.self="addOtherBoxVisible = false">
     <div class="dialog-card">
       <div class="dialog-card__header">
@@ -57,13 +68,7 @@
           <span class="dialog-card__kicker">Join workspace</span>
           <h3>加入协同表格</h3>
         </div>
-        <button
-          type="button"
-          class="dialog-card__close"
-          @click="addOtherBoxVisible = false"
-        >
-          ×
-        </button>
+        <button type="button" class="dialog-card__close" @click="addOtherBoxVisible = false">×</button>
       </div>
       <div class="dialog-card__body">
         <div class="dialog-field">
@@ -79,34 +84,21 @@
         <p class="dialog-tip">加入后，这份表格会同步写入你的本地列表，方便后续直接打开。</p>
       </div>
       <div class="dialog-card__footer">
-        <button type="button" class="ui-btn ui-btn--ghost" @click="addOtherBoxVisible = false">
-          取消
-        </button>
-        <button type="button" class="ui-btn ui-btn--primary" @click="confirmAddOtherTable">
-          加入表格
-        </button>
+        <button type="button" class="ui-btn ui-btn--ghost" @click="addOtherBoxVisible = false">取消</button>
+        <button type="button" class="ui-btn ui-btn--primary" @click="confirmAddOtherTable">加入表格</button>
       </div>
     </div>
   </div>
 
-  <div
-    v-if="renameDialogVisible"
-    class="dialog-overlay"
-    @click.self="renameDialogVisible = false"
-  >
+  <!-- 重命名弹窗 -->
+  <div v-if="renameDialogVisible" class="dialog-overlay" @click.self="renameDialogVisible = false">
     <div class="dialog-card">
       <div class="dialog-card__header">
         <div>
           <span class="dialog-card__kicker">Rename document</span>
           <h3>重命名表格</h3>
         </div>
-        <button
-          type="button"
-          class="dialog-card__close"
-          @click="renameDialogVisible = false"
-        >
-          ×
-        </button>
+        <button type="button" class="dialog-card__close" @click="renameDialogVisible = false">×</button>
       </div>
       <div class="dialog-card__body">
         <div class="dialog-field">
@@ -123,34 +115,21 @@
         <p class="dialog-tip">推荐使用清晰的业务名，协作者会在侧边栏看到同样的名称。</p>
       </div>
       <div class="dialog-card__footer">
-        <button type="button" class="ui-btn ui-btn--ghost" @click="renameDialogVisible = false">
-          取消
-        </button>
-        <button type="button" class="ui-btn ui-btn--primary" @click="submitRenameTable">
-          保存名称
-        </button>
+        <button type="button" class="ui-btn ui-btn--ghost" @click="renameDialogVisible = false">取消</button>
+        <button type="button" class="ui-btn ui-btn--primary" @click="submitRenameTable">保存名称</button>
       </div>
     </div>
   </div>
 
-  <div
-    v-if="deleteDialogVisible"
-    class="dialog-overlay"
-    @click.self="deleteDialogVisible = false"
-  >
+  <!-- 彻底删除警告弹窗 -->
+  <div v-if="deleteDialogVisible" class="dialog-overlay" @click.self="deleteDialogVisible = false">
     <div class="dialog-card dialog-card--danger">
       <div class="dialog-card__header">
         <div>
           <span class="dialog-card__kicker">Delete forever</span>
           <h3>彻底删除表格</h3>
         </div>
-        <button
-          type="button"
-          class="dialog-card__close"
-          @click="deleteDialogVisible = false"
-        >
-          ×
-        </button>
+        <button type="button" class="dialog-card__close" @click="deleteDialogVisible = false">×</button>
       </div>
       <div class="dialog-card__body">
         <div class="dialog-warning">
@@ -162,38 +141,30 @@
         </p>
       </div>
       <div class="dialog-card__footer">
-        <button type="button" class="ui-btn ui-btn--ghost" @click="deleteDialogVisible = false">
-          取消
-        </button>
-        <button type="button" class="ui-btn ui-btn--danger" @click="confirmDeleteTable">
-          确认删除
-        </button>
+        <button type="button" class="ui-btn ui-btn--ghost" @click="deleteDialogVisible = false">取消</button>
+        <button type="button" class="ui-btn ui-btn--danger" @click="confirmDeleteTable">确认删除</button>
       </div>
     </div>
   </div>
 
+  <!--
+    ====== 主工作区布局 ======
+    使用 el-splitter 实现左右分栏，左侧是列表，右侧是编辑器。边界可以拖拽调整。
+  -->
   <el-splitter lazy class="workspace">
+    <!-- 左侧侧边栏：文档列表与操作入口 -->
     <el-splitter-panel v-model:size="leftSize" :min="leftMinSize" :max="420">
       <aside class="workspace-sidebar" :class="{ 'workspace-sidebar--collapsed': !leftIsDisplay }">
         <div class="workspace-sidebar__top">
+          <!-- 侧边栏折叠/展开按钮 -->
           <button
             type="button"
             class="workspace-sidebar__toggle"
             :aria-label="leftIsDisplay ? '收起侧栏' : '展开侧栏'"
             @click="handleLeftDisplayChange"
           >
-            <img
-              v-if="leftIsDisplay"
-              src="@/asset/close.svg"
-              alt="收起侧栏"
-              class="workspace-sidebar__toggle-icon"
-            />
-            <img
-              v-else
-              src="@/asset/open.svg"
-              alt="展开侧栏"
-              class="workspace-sidebar__toggle-icon"
-            />
+            <img v-if="leftIsDisplay" src="@/asset/close.svg" alt="收起侧栏" class="workspace-sidebar__toggle-icon" />
+            <img v-else src="@/asset/open.svg" alt="展开侧栏" class="workspace-sidebar__toggle-icon" />
           </button>
 
           <div v-if="leftIsDisplay" class="workspace-sidebar__intro">
@@ -224,6 +195,7 @@
           </button>
         </div>
 
+        <!-- 列表渲染区域 -->
         <div class="workspace-sidebar__list">
           <template v-if="tableList.length">
             <button
@@ -249,6 +221,7 @@
               </span>
             </button>
           </template>
+          <!-- 列表为空时的占位提示 -->
           <div v-else class="workspace-sidebar__empty">
             <span class="workspace-sidebar__empty-title">这里还没有表格</span>
             <p>先创建一份协作表格，或者输入共享 ID 加入别人的工作区。</p>
@@ -272,8 +245,10 @@
       </aside>
     </el-splitter-panel>
 
+    <!-- 右侧主区域：表格编辑器实体 -->
     <el-splitter-panel :min="260">
       <section class="workspace-main">
+        <!-- 当有选中的表格时，挂载真实的协同编辑器组件 -->
         <template v-if="activeId && activeTable">
           <div class="workspace-main__header">
             <div class="workspace-main__heading">
@@ -282,17 +257,17 @@
               <p>文档 ID {{ activeTable.id }} · 最近更新 {{ formatUpdatedAt(activeTable.updatedAt) }}</p>
             </div>
             <div class="workspace-main__actions">
-              <button type="button" class="ui-btn ui-btn--ghost" @click="openShareBox">
-                分享协作
-              </button>
+              <button type="button" class="ui-btn ui-btn--ghost" @click="openShareBox">分享协作</button>
             </div>
           </div>
 
           <div class="workspace-main__editor">
+            <!-- 核心：挂载 excelItem 组件。使用 key 绑定 ID 强制在切换表格时销毁重建组件，防止数据串线 -->
             <excelItem :key="activeId" :id="activeId" />
           </div>
         </template>
 
+        <!-- 如果没有选中表格，展示空状态引导页 -->
         <div v-else class="workspace-empty-state">
           <span class="workspace-empty-state__eyebrow">Ready to collaborate</span>
           <h3>把表格变成一个实时协作工作区</h3>
@@ -317,6 +292,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+// 导入向后端发请求的 API 方法 (封装了 axios 或 fetch)
 import {
   deleteRemoteTable,
   getRemoteTableDetail,
@@ -324,42 +300,52 @@ import {
   type RemoteTableItem,
   validateRemoteTableList,
 } from '@/api/excel'
+// 导入核心的表格组件
 import excelItem from './components/excelItem.vue'
 
+// 本地存储的 Key，用于在浏览器中记录用户拥有的表格 ID 列表 (无账号体系下的去中心化身份识别)
 const LOCAL_STORAGE_KEY = 'my_collaborative_excel_ids'
 
-const leftIsDisplay = ref(true)
-const leftSize = ref(320)
-const leftMinSize = ref(260)
+// ===== UI 状态 =====
+const leftIsDisplay = ref(true) // 左侧边栏是否展开
+const leftSize = ref(320)       // 左分栏当前宽度
+const leftMinSize = ref(260)    // 左分栏最小宽度
 
-const tableList = ref<RemoteTableItem[]>([])
-const activeId = ref<number | null>(null)
+// ===== 核心数据 =====
+const tableList = ref<RemoteTableItem[]>([]) // 侧边栏表格列表数据源
+const activeId = ref<number | null>(null)    // 当前正在编辑的表格 ID
 
-const menuVisible = ref(false)
-const shareBoxVisible = ref(false)
-const addOtherBoxVisible = ref(false)
-const renameDialogVisible = ref(false)
-const deleteDialogVisible = ref(false)
+// ===== 弹窗控制与输入值 =====
+const menuVisible = ref(false)         // 右键菜单可见性
+const shareBoxVisible = ref(false)     // 分享弹窗
+const addOtherBoxVisible = ref(false)  // 加入弹窗
+const renameDialogVisible = ref(false) // 重命名弹窗
+const deleteDialogVisible = ref(false) // 彻底删除弹窗
 
-const otherTableId = ref('')
-const renameValue = ref('')
+const otherTableId = ref('') // 用户输入的想加入的别人的表格 ID
+const renameValue = ref('')  // 重命名输入框的值
 
-const position = reactive({ x: 0, y: 0 })
-const delId = ref<number | null>(null)
+const position = reactive({ x: 0, y: 0 }) // 右键菜单弹出时的 X/Y 坐标
+const delId = ref<number | null>(null)    // 当前右键选中的目标表格 ID (可能和 activeId 不同)
 
+// ===== 计算属性 =====
 const tableSummary = computed(() => {
   if (!tableList.value.length) return '建立自己的文档架，随时发起或加入协作。'
   return `共 ${tableList.value.length} 份表格，右键可管理每一份文档。`
 })
 
+// 根据选中的 activeId 从列表中找出完整的 table 对象，以展示标题
 const activeTable = computed(
   () => tableList.value.find((item) => item.id === activeId.value) ?? null,
 )
 
+// 根据右键选中的 delId 找出对象 (弹窗里展示要删除/改名的是谁)
 const currentMenuTable = computed(
   () => tableList.value.find((item) => item.id === delId.value) ?? null,
 )
 
+// ===== 本地存储管理工具 =====
+// 从 localStorage 中读取保存的表格 ID 列表
 const getLocalIds = (): number[] => {
   try {
     const json = localStorage.getItem(LOCAL_STORAGE_KEY)
@@ -369,26 +355,22 @@ const getLocalIds = (): number[] => {
     return []
   }
 }
-
+// 将列表存回 localStorage，使用 Set 去重避免重复加入
 const saveLocalIds = (ids: number[]) => {
   localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(Array.from(new Set(ids))))
 }
 
+// 格式化时间戳显示为 "12-28 14:30" 这样的人类友好格式
 const formatUpdatedAt = (timestamp: number) => {
   if (!timestamp) return '--'
-
   return new Intl.DateTimeFormat('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
+    month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
   }).format(timestamp)
 }
+// 获取首字母作为头像占位符
+const getTableMonogram = (name: string) => name.trim().slice(0, 1).toUpperCase() || '#'
 
-const getTableMonogram = (name: string) => {
-  return name.trim().slice(0, 1).toUpperCase() || '#'
-}
-
+// 统一关闭所有弹窗和右键菜单
 const closeOverlays = () => {
   menuVisible.value = false
   shareBoxVisible.value = false
@@ -397,6 +379,11 @@ const closeOverlays = () => {
   deleteDialogVisible.value = false
 }
 
+// ===== 核心业务逻辑 =====
+
+/**
+ * 刷新表格列表：将本地缓存的 ID 列表发给后端，后端过滤掉已被别人彻底删除的废弃 ID 后，返回真实的最新列表信息。
+ */
 const refreshList = async () => {
   const localIds = getLocalIds()
   if (!localIds.length) {
@@ -406,16 +393,19 @@ const refreshList = async () => {
   }
 
   try {
+    // 调用后端的 /validate 接口
     const payload = localIds.map((id) => ({ id })) as unknown as RemoteTableItem[]
     const validTables = await validateRemoteTableList(payload)
 
     tableList.value = validTables || []
 
+    // 同步清洗本地无效 ID
     const validIds = tableList.value.map((item) => item.id)
     if (validIds.length !== localIds.length) {
       saveLocalIds(validIds)
     }
 
+    // 如果当前打开的表格已经被删了，清空右侧编辑区
     if (activeId.value !== null && !validIds.includes(activeId.value)) {
       activeId.value = null
     }
@@ -424,17 +414,21 @@ const refreshList = async () => {
   }
 }
 
+/**
+ * 新建一份协作表格
+ */
 const handleAddTable = async () => {
-  const newId = Date.now()
+  const newId = Date.now() // 简单用时间戳作为唯一 ID
   const newName = `协同表格 ${new Date().toLocaleTimeString()}`
 
   try {
-    await saveRemoteTable({ id: newId, name: newName })
+    await saveRemoteTable({ id: newId, name: newName }) // 通知后端创建元数据
     const ids = getLocalIds()
-    ids.unshift(newId)
+    ids.unshift(newId) // 加到本地列表最前面
     saveLocalIds(ids)
+
     await refreshList()
-    activeId.value = newId
+    activeId.value = newId // 自动激活刚创建的表格
     ElMessage.success('已创建新的协同表格')
   } catch (error) {
     console.error('Create table failed:', error)
@@ -442,19 +436,23 @@ const handleAddTable = async () => {
   }
 }
 
+// 弹出“加入协同表格”的输入框
 const handleAddOtherTable = () => {
   menuVisible.value = false
   otherTableId.value = ''
   addOtherBoxVisible.value = true
 }
 
+/**
+ * 确认加入别人分享的表格 ID
+ */
 const confirmAddOtherTable = async () => {
   const inputId = Number(otherTableId.value.trim())
   if (!inputId) {
     ElMessage.warning('请输入有效的表格 ID')
     return
   }
-
+  // 防止重复加入
   if (tableList.value.some((item) => item.id === inputId)) {
     activeId.value = inputId
     addOtherBoxVisible.value = false
@@ -463,10 +461,13 @@ const confirmAddOtherTable = async () => {
   }
 
   try {
+    // 调用详情接口确认这个表是不是真的存在
     await getRemoteTableDetail(inputId)
+
     const ids = getLocalIds()
     ids.unshift(inputId)
     saveLocalIds(ids)
+
     await refreshList()
     activeId.value = inputId
     addOtherBoxVisible.value = false
@@ -477,20 +478,21 @@ const confirmAddOtherTable = async () => {
   }
 }
 
+// 弹出重命名对话框，设置好当前的名字
 const openRenameDialog = () => {
   if (delId.value === null) return
-
   const target = currentMenuTable.value
   if (!target) return
-
   renameValue.value = target.name
   menuVisible.value = false
   renameDialogVisible.value = true
 }
 
+/**
+ * 提交重命名
+ */
 const submitRenameTable = async () => {
   if (delId.value === null) return
-
   const newName = renameValue.value.trim()
   if (!newName) {
     ElMessage.warning('请输入新的表格名称')
@@ -498,7 +500,7 @@ const submitRenameTable = async () => {
   }
 
   try {
-    await saveRemoteTable({ id: delId.value, name: newName })
+    await saveRemoteTable({ id: delId.value, name: newName }) // 调用复用的 /save 接口更新名字
     await refreshList()
     renameDialogVisible.value = false
     ElMessage.success('表格名称已更新')
@@ -508,17 +510,17 @@ const submitRenameTable = async () => {
   }
 }
 
+/**
+ * 仅从本地列表移除 (不影响云端)
+ */
 const handleRemoveFromList = async () => {
   if (delId.value === null) return
 
   const ids = getLocalIds()
-  saveLocalIds(ids.filter((id) => id !== delId.value))
+  saveLocalIds(ids.filter((id) => id !== delId.value)) // 把选中的 ID 从本地数组中剔除
   await refreshList()
 
-  if (activeId.value === delId.value) {
-    activeId.value = null
-  }
-
+  if (activeId.value === delId.value) activeId.value = null
   menuVisible.value = false
   ElMessage.success('已从当前列表移除')
 }
@@ -529,20 +531,20 @@ const openDeleteDialog = () => {
   deleteDialogVisible.value = true
 }
 
+/**
+ * 彻底删除 (会发请求让服务器干掉这个表的所有数据)
+ */
 const confirmDeleteTable = async () => {
   if (delId.value === null) return
 
   try {
-    await deleteRemoteTable(delId.value)
+    await deleteRemoteTable(delId.value) // 调用后端彻底删除接口
 
     const ids = getLocalIds()
     saveLocalIds(ids.filter((id) => id !== delId.value))
     await refreshList()
 
-    if (activeId.value === delId.value) {
-      activeId.value = null
-    }
-
+    if (activeId.value === delId.value) activeId.value = null
     deleteDialogVisible.value = false
     ElMessage.success('表格已彻底删除')
   } catch (error) {
@@ -551,24 +553,25 @@ const confirmDeleteTable = async () => {
   }
 }
 
+// 左侧列表点击选中事件
 const handleSelectTable = (id: number) => {
   if (activeId.value === id) return
   activeId.value = id
 }
 
+// 弹出分享信息框
 const openShareBox = () => {
   if (!activeId.value) {
     ElMessage.info('先选择一份表格，再分享给协作者')
     return
   }
-
   menuVisible.value = false
   shareBoxVisible.value = true
 }
 
+// 复制分享 ID 到剪贴板
 const handleCopyShareInfo = async () => {
   if (!activeId.value) return
-
   try {
     await navigator.clipboard.writeText(String(activeId.value))
     shareBoxVisible.value = false
@@ -579,44 +582,49 @@ const handleCopyShareInfo = async () => {
   }
 }
 
+// 处理在表格项上的鼠标右键点击：定位菜单并记录目标 ID
 const openMenu = (event: MouseEvent, id: number) => {
-  const menuWidth = 188
-  const menuHeight = 148
-  const viewportWidth = window.innerWidth
-  const viewportHeight = window.innerHeight
+  const menuWidth = 188, menuHeight = 148
+  const viewportWidth = window.innerWidth, viewportHeight = window.innerHeight
 
+  // 避免菜单溢出屏幕边界
   position.x = Math.min(event.clientX, viewportWidth - menuWidth - 12)
   position.y = Math.min(event.clientY, viewportHeight - menuHeight - 12)
   delId.value = id
   menuVisible.value = true
 }
 
+// 侧边栏展开/折叠切换
 const handleLeftDisplayChange = () => {
   leftIsDisplay.value = !leftIsDisplay.value
   leftSize.value = leftIsDisplay.value ? 320 : 92
   leftMinSize.value = leftIsDisplay.value ? 260 : 92
 }
 
+// 点空白处关闭右键菜单
 const handleWindowClick = () => {
   menuVisible.value = false
 }
 
+// 按 ESC 键关闭所有弹窗
 const handleWindowKeydown = (event: KeyboardEvent) => {
-  if (event.key === 'Escape') {
-    closeOverlays()
-  }
+  if (event.key === 'Escape') closeOverlays()
 }
 
+// ===== 生命周期 =====
 onMounted(async () => {
+  // 响应式：屏幕太小时默认折叠左侧边栏
   if (window.innerWidth < 960) {
     leftIsDisplay.value = false
     leftSize.value = 92
     leftMinSize.value = 92
   }
 
+  // 绑定全局事件
   window.addEventListener('click', handleWindowClick)
   window.addEventListener('keydown', handleWindowKeydown)
 
+  // 初始化时拉取最新的表格列表
   await refreshList()
 })
 
@@ -627,6 +635,7 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* 样式部分保持不变，为你的定制 UI 样式 */
 .workspace {
   height: 100%;
   min-height: 0;
