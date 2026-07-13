@@ -99,9 +99,9 @@ const initYjs = () => {
 
   // 动态拼装后端 WebSocket 地址：如果前端是 https，ws 就得用 wss 协议加密
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const host = window.location.hostname
-  const port = '3000' // 【注意】这里写死了后端服务端口 3000，如果你改了后端端口这里也要改
-  const wsUrl = `${protocol}//${host}:${port}`
+  const host = window.location.host
+  const wsPath = "/tool-ws" // 【注意】这里写死了后端服务端口 3000，如果你改了后端端口这里也要改
+  const wsUrl = `${protocol}//${host}${wsPath}`
 
   // 初始化提供者，连接后端，并把房间 ID (`props.id`) 作为房间号，把本地的 ydoc 传进去双向绑定
   provider = new WebsocketProvider(wsUrl, String(props.id), ydoc)
