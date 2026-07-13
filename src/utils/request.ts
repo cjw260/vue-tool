@@ -14,7 +14,7 @@ interface ApiResponse<T = unknown> {
 }
 
 const service: AxiosInstance = axios.create({
-  baseURL: 'http://localhost:3000/api',
+  baseURL: '/tool-api/',
   timeout: 60000,
   headers: {
     'Content-Type': 'application/json;charset=utf-8',
