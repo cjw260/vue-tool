@@ -57,7 +57,7 @@ app.use(express.urlencoded({
 // 自定义 HTTP 请求日志中间件：打印每一个收到的 HTTP 请求
 app.use((req, res, next) => {
   // 忽略 /health 健康检查接口的日志，防止云服务器频繁的心跳检测把终端日志刷屏
-  if (req.url !== '/health') {
+  if (req.url !== '/healthz') {
     console.log(`[${new Date().toLocaleTimeString()}] HTTP ${req.method} ${req.url}`)
   }
   next() // 把请求放行给下一个匹配的路由
@@ -66,6 +66,12 @@ app.use((req, res, next) => {
 // ==========================================
 // 数据库连接 (MongoDB)
 // ==========================================
+let persistenceReady = false
+app.get('/healthz', (_req, res) => {
+  const ready = mongoose.connection.readyState === 1 && persistenceReady
+  res.status(ready ? 200 : 503).json({ status: ready ? 'ok' : 'unavailable' })
+})
+
 const MONGO_URI = process.env.MONGO_URI // 从 .env 取出数据库连接字符串 (如 mongodb://localhost:27017/myexcel)
 
 if (!MONGO_URI) {
@@ -173,6 +179,7 @@ mongooseConnectPromise.then(() => {
         }
       },
     })
+    persistenceReady = true
   }
 })
 
