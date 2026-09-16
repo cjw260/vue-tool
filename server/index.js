@@ -433,7 +433,7 @@ const PORT = process.env.PORT || 3000
 
 // 必须启动 server(即 http.createServer 包装后的层) 而不是 app(纯 Express 层)，
 // 只有这样，后端的 Express(处理 HTTP) 和 WebSocket(处理 ws) 才能和谐地共享 3000 这一个端口。
-server.listen(PORT, () => {
+server.listen(PORT, process.env.HOST || '0.0.0.0', () => {
   console.log(`🚀 服务运行在 http://localhost:${PORT}`)
   console.log(`🔌 WebSocket 协同服务已就绪`)
 })
