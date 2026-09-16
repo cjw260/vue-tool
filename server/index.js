@@ -57,7 +57,7 @@ app.use(express.urlencoded({
 // 自定义 HTTP 请求日志中间件：打印每一个收到的 HTTP 请求
 app.use((req, res, next) => {
   // 忽略 /health 健康检查接口的日志，防止云服务器频繁的心跳检测把终端日志刷屏
-  if (req.url !== '/health') {
+  if (req.url !== '/healthz') {
     console.log(`[${new Date().toLocaleTimeString()}] HTTP ${req.method} ${req.url}`)
   }
   next() // 把请求放行给下一个匹配的路由
@@ -66,6 +66,12 @@ app.use((req, res, next) => {
 // ==========================================
 // 数据库连接 (MongoDB)
 // ==========================================
+let persistenceReady = false
+app.get('/healthz', (_req, res) => {
+  const ready = mongoose.connection.readyState === 1 && persistenceReady
+  res.status(ready ? 200 : 503).json({ status: ready ? 'ok' : 'unavailable' })
+})
+
 const MONGO_URI = process.env.MONGO_URI // 从 .env 取出数据库连接字符串 (如 mongodb://localhost:27017/myexcel)
 
 if (!MONGO_URI) {
@@ -119,6 +125,17 @@ const TableModel = mongoose.model('ExcelTable', tableSchema)
 // 作用：WebSocket 断开或服务器重启后，之前大家协同编辑的表格数据不会丢失。
 // ==========================================
 let mdb
+const pendingWrites = new Set()
+function persistUpdate(docName, update) {
+  const task = Promise.resolve().then(() => mdb.storeUpdate(docName, update)).catch((err) => {
+    persistenceReady = false
+    console.error('[Yjs] Failed to persist collaboration update:', err.message)
+    throw err
+  })
+  pendingWrites.add(task)
+  task.then(() => pendingWrites.delete(task), () => pendingWrites.delete(task))
+  return task
+}
 // ==========================================
 // Yjs 持久化初始化
 // 注意：不能直接传 MONGO_URI 字符串给 y-mongodb-provider，
@@ -152,11 +169,13 @@ mongooseConnectPromise.then(() => {
     setPersistence({
       // bindState: 当有第一个用户进入某个表格房间时触发 (从数据库捞历史数据加载到服务器内存)
       bindState: async (docName, ydoc) => {
+        // Persist each edit while clients remain connected, including during deployments.
+        ydoc.on('update', (update) => { persistUpdate(docName, update).catch(() => {}) })
         try {
           // docName 通常就是前端 WebSocket 连过来时带的 表格ID (roomId)
           const persistedYdoc = await mdb.getYDoc(docName) // 从数据库拉取完整的协同历史二进制文档
           const newUpdates = Y.encodeStateAsUpdate(ydoc) // 获取当前内存里的初始状态
-          await mdb.storeUpdate(docName, newUpdates) // 更新一下存储层，确保两边一致
+          await persistUpdate(docName, newUpdates) // 更新一下存储层，确保两边一致
           Y.applyUpdate(ydoc, Y.encodeStateAsUpdate(
             persistedYdoc)) // 把历史数据合并应用到当前的内存 ydoc 上，实现数据恢复
         } catch (err) {
@@ -167,12 +186,13 @@ mongooseConnectPromise.then(() => {
       writeState: async (docName, ydoc) => {
         try {
           const newUpdates = Y.encodeStateAsUpdate(ydoc) // 将全量的修改转化为二进制增量包
-          await mdb.storeUpdate(docName, newUpdates) // 写入 MongoDB 进行持久化
+          await persistUpdate(docName, newUpdates) // 写入 MongoDB 进行持久化
         } catch (err) {
           console.error(`[Yjs] writeState 错误 (Room: ${docName}):`, err)
         }
       },
     })
+    persistenceReady = true
   }
 })
 
@@ -417,3 +437,26 @@ server.listen(PORT, () => {
   console.log(`🚀 服务运行在 http://localhost:${PORT}`)
   console.log(`🔌 WebSocket 协同服务已就绪`)
 })
+
+// Stop accepting connections, close collaboration rooms, then flush pending writes.
+let shuttingDown = false
+async function shutdown() {
+  if (shuttingDown) return
+  shuttingDown = true
+  persistenceReady = false
+  const timeout = setTimeout(() => process.exit(1), 25000)
+  server.close()
+  for (const client of wss.clients) client.close(1012, 'Service restart')
+  try {
+    await new Promise((resolve) => wss.close(resolve))
+    while (pendingWrites.size) await Promise.all([...pendingWrites])
+    await mongoose.disconnect()
+    clearTimeout(timeout)
+    process.exit(0)
+  } catch {
+    console.error('Failed to flush collaboration data during shutdown')
+    process.exit(1)
+  }
+}
+process.once('SIGTERM', shutdown)
+process.once('SIGINT', shutdown)
